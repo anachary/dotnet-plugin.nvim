@@ -1,76 +1,32 @@
 -- Enhanced Solution Explorer for dotnet-plugin.nvim
--- Provides advanced file operations, project templates, and enhanced navigation
+-- Modular design following SOLID principles
 
 local M = {}
 
--- Import dependencies
+-- Import core dependencies
 local config = require('dotnet-plugin.core.config')
 local logger = require('dotnet-plugin.core.logger')
 local events = require('dotnet-plugin.core.events')
-local process = require('dotnet-plugin.core.process')
-local solution_parser = require('dotnet-plugin.solution.parser')
-local project_parser = require('dotnet-plugin.project.parser')
 
--- Enhanced explorer state
+-- Import specialized modules (following Single Responsibility Principle)
+local ExplorerWindow = require('dotnet-plugin.ui.explorer.window')
+local ExplorerTree = require('dotnet-plugin.ui.explorer.tree')
+local FileOperations = require('dotnet-plugin.ui.explorer.file_operations')
+local ProjectTemplates = require('dotnet-plugin.ui.explorer.project_templates')
+local KeymapManager = require('dotnet-plugin.ui.explorer.keymap_manager')
+local ContextMenu = require('dotnet-plugin.ui.explorer.context_menu')
+
+-- Enhanced explorer state (minimal, following SRP)
 M._initialized = false
-M._explorer_buf = nil
-M._explorer_win = nil
-M._tree_data = {}
-M._expanded_nodes = {}
-M._selected_node = nil
-M._filter_text = ""
-M._show_hidden_files = false
-M._context_menu_active = false
+M._components = {}
 
--- Node types
-M.NODE_TYPES = {
-  SOLUTION = "solution",
-  PROJECT = "project", 
-  FOLDER = "folder",
-  FILE = "file",
-  REFERENCE = "reference",
-  PACKAGE = "package",
-  DEPENDENCY = "dependency"
+-- Interface for component communication (Dependency Inversion Principle)
+local IExplorerComponent = {
+  setup = function(self, opts) end,
+  cleanup = function(self) end
 }
 
--- File operation types
-M.FILE_OPERATIONS = {
-  CREATE_FILE = "create_file",
-  CREATE_FOLDER = "create_folder",
-  CREATE_PROJECT = "create_project",
-  RENAME = "rename",
-  DELETE = "delete",
-  COPY = "copy",
-  MOVE = "move",
-  ADD_REFERENCE = "add_reference",
-  MANAGE_PACKAGES = "manage_packages"
-}
-
--- Project templates
-M.PROJECT_TEMPLATES = {
-  {name = "Console Application", template = "console", framework = "net8.0"},
-  {name = "Class Library", template = "classlib", framework = "net8.0"},
-  {name = "Web API", template = "webapi", framework = "net8.0"},
-  {name = "MVC Web App", template = "mvc", framework = "net8.0"},
-  {name = "Blazor Server", template = "blazorserver", framework = "net8.0"},
-  {name = "Worker Service", template = "worker", framework = "net8.0"},
-  {name = "xUnit Test Project", template = "xunit", framework = "net8.0"},
-  {name = "NUnit Test Project", template = "nunit", framework = "net8.0"}
-}
-
--- File templates
-M.FILE_TEMPLATES = {
-  {name = "Class", extension = "cs", template = "class"},
-  {name = "Interface", extension = "cs", template = "interface"},
-  {name = "Enum", extension = "cs", template = "enum"},
-  {name = "Record", extension = "cs", template = "record"},
-  {name = "Controller", extension = "cs", template = "controller"},
-  {name = "Service", extension = "cs", template = "service"},
-  {name = "Model", extension = "cs", template = "model"},
-  {name = "Configuration", extension = "json", template = "config"}
-}
-
---- Setup enhanced solution explorer
+--- Setup enhanced solution explorer (following Dependency Injection)
 --- @param opts table|nil Configuration options
 --- @return boolean success True if setup succeeded
 function M.setup(opts)
@@ -79,468 +35,404 @@ function M.setup(opts)
   end
 
   opts = opts or {}
-  
+
+  -- Initialize components (Dependency Injection)
+  M._components.window = ExplorerWindow
+  M._components.tree = ExplorerTree
+  M._components.file_ops = FileOperations
+  M._components.templates = ProjectTemplates
+  M._components.keymaps = KeymapManager
+  M._components.context_menu = ContextMenu
+
+  -- Setup all components
+  local success = M._setup_components(opts)
+  if not success then
+    logger.error("Failed to setup enhanced explorer components")
+    return false
+  end
+
   -- Setup event handlers
   M._setup_event_handlers()
-  
+
   -- Register enhanced commands
   M._register_enhanced_commands()
 
   M._initialized = true
-  logger.info("Enhanced solution explorer initialized")
-  
+  logger.info("Enhanced solution explorer initialized with modular architecture")
+
   return true
 end
 
---- Register enhanced commands
+--- Setup components (Single Responsibility Principle)
+--- @param opts table Configuration options
+--- @return boolean success
+function M._setup_components(opts)
+  local component_configs = {
+    window = opts.window or {},
+    tree = opts.tree or {},
+    file_ops = opts.file_operations or {},
+    templates = opts.templates or {},
+    keymaps = opts.keymaps or {},
+    context_menu = opts.context_menu or {}
+  }
+
+  -- Setup each component
+  for name, component in pairs(M._components) do
+    local config = component_configs[name] or {}
+    local success = component.setup(config)
+    if not success then
+      logger.error("Failed to setup component: " .. name)
+      return false
+    end
+  end
+
+  return true
+end
+
+--- Register enhanced commands (Interface Segregation Principle)
 function M._register_enhanced_commands()
-  -- Enhanced explorer commands
-  vim.api.nvim_create_user_command('DotnetExplorerEnhanced', function()
-    M.open_enhanced()
-  end, {
-    desc = 'Open enhanced solution explorer'
-  })
-  
-  -- File operations
-  vim.api.nvim_create_user_command('DotnetCreateFile', function(opts)
-    M.create_file(opts.args)
-  end, {
-    nargs = '?',
-    desc = 'Create new file with template'
-  })
-  
-  vim.api.nvim_create_user_command('DotnetCreateProject', function(opts)
-    M.create_project(opts.args)
-  end, {
-    nargs = '?',
-    desc = 'Create new project from template'
-  })
-  
-  vim.api.nvim_create_user_command('DotnetRenameFile', function()
-    M.rename_selected()
-  end, {
-    desc = 'Rename selected file/folder'
-  })
-  
-  vim.api.nvim_create_user_command('DotnetDeleteFile', function()
-    M.delete_selected()
-  end, {
-    desc = 'Delete selected file/folder'
-  })
-  
-  -- Project operations
-  vim.api.nvim_create_user_command('DotnetAddReference', function(opts)
-    M.add_project_reference(opts.args)
-  end, {
-    nargs = '?',
-    desc = 'Add project reference'
-  })
-  
-  vim.api.nvim_create_user_command('DotnetManagePackages', function()
-    M.manage_nuget_packages()
-  end, {
-    desc = 'Manage NuGet packages'
-  })
-  
-  -- Search and filter
-  vim.api.nvim_create_user_command('DotnetExplorerFilter', function(opts)
-    M.set_filter(opts.args)
-  end, {
-    nargs = '?',
-    desc = 'Filter explorer contents'
-  })
-  
-  vim.api.nvim_create_user_command('DotnetExplorerSearch', function(opts)
-    M.search_files(opts.args)
-  end, {
-    nargs = '?',
-    desc = 'Search files in solution'
-  })
-  
+  local commands = {
+    {
+      name = 'DotnetExplorerEnhanced',
+      func = function() M.open() end,
+      opts = { desc = 'Open enhanced solution explorer' }
+    },
+    {
+      name = 'DotnetCreateFile',
+      func = function(opts) M.create_file_interactive(opts.args) end,
+      opts = { nargs = '?', desc = 'Create new file with template' }
+    },
+    {
+      name = 'DotnetCreateProject',
+      func = function(opts) M.create_project_interactive(opts.args) end,
+      opts = { nargs = '?', desc = 'Create new project from template' }
+    },
+    {
+      name = 'DotnetExplorerFilter',
+      func = function(opts) M.set_filter(opts.args) end,
+      opts = { nargs = '?', desc = 'Filter explorer contents' }
+    }
+  }
+
+  -- Register all commands
+  for _, cmd in ipairs(commands) do
+    vim.api.nvim_create_user_command(cmd.name, cmd.func, cmd.opts)
+  end
+
   logger.debug("Enhanced explorer commands registered")
 end
 
---- Setup event handlers
+--- Setup event handlers (Observer Pattern)
 function M._setup_event_handlers()
-  -- Listen for solution changes
-  events.subscribe(events.EVENTS.SOLUTION_LOADED, function(data)
-    M._load_enhanced_solution(data.solution_file)
-  end)
-  
-  -- Listen for project changes
-  events.subscribe(events.EVENTS.PROJECT_CHANGED, function(data)
-    M._refresh_project_node(data.project_file)
-  end)
-  
-  -- Listen for file system changes
-  events.subscribe("file_created", function(data)
-    M._handle_file_created(data.file_path)
-  end)
-  
-  events.subscribe("file_deleted", function(data)
-    M._handle_file_deleted(data.file_path)
-  end)
-  
-  events.subscribe("file_renamed", function(data)
-    M._handle_file_renamed(data.old_path, data.new_path)
-  end)
-  
+  local event_handlers = {
+    [events.EVENTS.SOLUTION_LOADED] = function(data)
+      M.load_solution(data.solution_file)
+    end,
+
+    [events.EVENTS.PROJECT_CHANGED] = function(data)
+      M.refresh_project(data.project_file)
+    end,
+
+    ["file_created"] = function(data)
+      M.refresh_tree()
+    end,
+
+    ["file_deleted"] = function(data)
+      M.refresh_tree()
+    end,
+
+    ["file_renamed"] = function(data)
+      M.refresh_tree()
+    end,
+
+    ["project_created"] = function(data)
+      M.refresh_tree()
+    end
+  }
+
+  -- Subscribe to all events
+  for event, handler in pairs(event_handlers) do
+    events.subscribe(event, handler)
+  end
+
   logger.debug("Enhanced explorer event handlers setup")
 end
 
---- Open enhanced solution explorer
-function M.open_enhanced()
-  if M._is_open() then
+--- Open enhanced solution explorer (Facade Pattern)
+function M.open()
+  if M.is_open() then
+    M._components.window.focus()
     return
   end
-  
-  -- Create enhanced explorer buffer
-  M._create_enhanced_buffer()
-  
-  -- Create enhanced explorer window
-  M._create_enhanced_window()
-  
-  -- Setup enhanced keymaps
-  M._setup_enhanced_keymaps()
-  
+
+  -- Create window and buffer
+  local window_id = M._components.window.create_window()
+  local buffer_id = M._components.window.get_buffer()
+
+  if not window_id or not buffer_id then
+    logger.error("Failed to create explorer window")
+    return
+  end
+
+  -- Setup keymaps with callbacks
+  local callbacks = M._create_action_callbacks()
+  M._components.keymaps.setup(buffer_id, callbacks)
+
   -- Load current solution if available
   local solution_file = M._find_solution_file()
   if solution_file then
-    M._load_enhanced_solution(solution_file)
+    M.load_solution(solution_file)
   else
     M._show_no_solution_message()
   end
-  
+
   logger.info("Enhanced solution explorer opened")
 end
 
---- Create enhanced explorer buffer
-function M._create_enhanced_buffer()
-  M._explorer_buf = vim.api.nvim_create_buf(false, true)
-  
-  -- Set buffer options
-  vim.api.nvim_buf_set_option(M._explorer_buf, 'buftype', 'nofile')
-  vim.api.nvim_buf_set_option(M._explorer_buf, 'swapfile', false)
-  vim.api.nvim_buf_set_option(M._explorer_buf, 'bufhidden', 'wipe')
-  vim.api.nvim_buf_set_option(M._explorer_buf, 'filetype', 'dotnet-enhanced-explorer')
-  vim.api.nvim_buf_set_name(M._explorer_buf, '.NET Enhanced Explorer')
+--- Load solution into explorer
+--- @param solution_file string Solution file path
+function M.load_solution(solution_file)
+  local success = M._components.tree.load_solution(solution_file)
+  if success then
+    M.refresh_tree()
+  end
 end
 
---- Create enhanced explorer window
-function M._create_enhanced_window()
-  local explorer_config = config.get_value("ui.enhanced_explorer") or {}
-  local width = explorer_config.width or 35
-  local height = explorer_config.height or vim.o.lines - 10
-  local position = explorer_config.position or "left"
-  
-  -- Create floating window for enhanced features
-  local win_config = {
-    relative = 'editor',
-    width = width,
-    height = height,
-    col = position == "right" and (vim.o.columns - width - 2) or 1,
-    row = 1,
-    style = 'minimal',
-    border = 'rounded',
-    title = ' .NET Enhanced Explorer ',
-    title_pos = 'center'
+--- Refresh tree display
+function M.refresh_tree()
+  local buffer = M._components.window.get_buffer()
+  if buffer then
+    M._components.tree.render(buffer)
+  end
+end
+
+--- Check if explorer is open
+--- @return boolean is_open
+function M.is_open()
+  return M._components.window.is_open()
+end
+
+--- Close explorer
+function M.close()
+  M._components.window.close()
+end
+
+--- Set filter text
+--- @param filter string Filter text
+function M.set_filter(filter)
+  M._components.tree.set_filter(filter)
+  M.refresh_tree()
+end
+
+--- Create action callbacks (Command Pattern)
+--- @return table callbacks
+function M._create_action_callbacks()
+  return {
+    open_item = function()
+      local node = M._get_current_node()
+      if node then
+        M._handle_open_item(node)
+      end
+    end,
+
+    toggle_node = function()
+      local node = M._get_current_node()
+      if node then
+        M._components.tree.toggle_node(node)
+        M.refresh_tree()
+      end
+    end,
+
+    create_file = function()
+      M.create_file_interactive()
+    end,
+
+    create_folder = function()
+      M.create_folder_interactive()
+    end,
+
+    create_project = function()
+      M.create_project_interactive()
+    end,
+
+    rename_item = function()
+      local node = M._get_current_node()
+      if node then
+        M._handle_rename(node)
+      end
+    end,
+
+    delete_item = function()
+      local node = M._get_current_node()
+      if node then
+        M._handle_delete(node)
+      end
+    end,
+
+    show_context_menu = function()
+      local node = M._get_current_node()
+      if node then
+        local callbacks = M._create_context_menu_callbacks()
+        M._components.context_menu.show_menu(node, callbacks)
+      end
+    end,
+
+    close_explorer = function()
+      M.close()
+    end,
+
+    show_help = function()
+      M._show_help()
+    end,
+
+    refresh_all = function()
+      local solution_file = M._find_solution_file()
+      if solution_file then
+        M.load_solution(solution_file)
+      end
+    end,
+
+    refresh_current = function()
+      M.refresh_tree()
+    end,
+
+    filter_items = function()
+      local filter = vim.fn.input("Filter: ")
+      M.set_filter(filter)
+    end,
+
+    toggle_hidden_files = function()
+      M._components.tree.toggle_hidden_files()
+      M.refresh_tree()
+    end
   }
-  
-  M._explorer_win = vim.api.nvim_open_win(M._explorer_buf, true, win_config)
-  
-  -- Set window options
-  vim.api.nvim_win_set_option(M._explorer_win, 'number', false)
-  vim.api.nvim_win_set_option(M._explorer_win, 'relativenumber', false)
-  vim.api.nvim_win_set_option(M._explorer_win, 'signcolumn', 'no')
-  vim.api.nvim_win_set_option(M._explorer_win, 'wrap', false)
-  vim.api.nvim_win_set_option(M._explorer_win, 'cursorline', true)
 end
 
---- Setup enhanced keymaps
-function M._setup_enhanced_keymaps()
-  local opts = { buffer = M._explorer_buf, silent = true }
-  
-  -- Navigation
-  vim.keymap.set('n', '<CR>', M._on_enter_enhanced, opts)
-  vim.keymap.set('n', 'o', M._on_enter_enhanced, opts)
-  vim.keymap.set('n', '<2-LeftMouse>', M._on_enter_enhanced, opts)
-  
-  -- Tree operations
-  vim.keymap.set('n', '<Tab>', M._toggle_node_enhanced, opts)
-  vim.keymap.set('n', '<Space>', M._toggle_node_enhanced, opts)
-  vim.keymap.set('n', 'za', M._toggle_node_enhanced, opts)
-  
-  -- File operations
-  vim.keymap.set('n', 'a', M._create_file_interactive, opts)
-  vim.keymap.set('n', 'A', M._create_folder_interactive, opts)
-  vim.keymap.set('n', 'p', M._create_project_interactive, opts)
-  vim.keymap.set('n', 'r', M._rename_interactive, opts)
-  vim.keymap.set('n', 'd', M._delete_interactive, opts)
-  vim.keymap.set('n', 'c', M._copy_interactive, opts)
-  vim.keymap.set('n', 'm', M._move_interactive, opts)
-  
-  -- Project operations
-  vim.keymap.set('n', 'R', M._add_reference_interactive, opts)
-  vim.keymap.set('n', 'P', M._manage_packages_interactive, opts)
-  
-  -- Search and filter
-  vim.keymap.set('n', '/', M._filter_interactive, opts)
-  vim.keymap.set('n', 'f', M._search_interactive, opts)
-  vim.keymap.set('n', 'F', M._clear_filter, opts)
-  
-  -- View options
-  vim.keymap.set('n', 'H', M._toggle_hidden_files, opts)
-  vim.keymap.set('n', 'I', M._show_file_info, opts)
-  
-  -- Context menu
-  vim.keymap.set('n', '<RightMouse>', M._show_context_menu, opts)
-  vim.keymap.set('n', 'C', M._show_context_menu, opts)
-  
-  -- Refresh
-  vim.keymap.set('n', '<F5>', M._refresh_all, opts)
-  vim.keymap.set('n', 'g', M._refresh_current, opts)
-  
-  -- Window operations
-  vim.keymap.set('n', 'q', M._close_enhanced, opts)
-  vim.keymap.set('n', '<Esc>', M._close_enhanced, opts)
-  
-  -- Help
-  vim.keymap.set('n', '?', M._show_help, opts)
+--- Get current node under cursor
+--- @return table|nil node
+function M._get_current_node()
+  local window = M._components.window.get_window()
+  if not window or not vim.api.nvim_win_is_valid(window) then
+    return nil
+  end
+
+  local line = vim.api.nvim_win_get_cursor(window)[1]
+  return M._components.tree.get_node_at_line(line)
+end
+
+--- Handle opening an item
+--- @param node table Tree node
+function M._handle_open_item(node)
+  if node.type == "file" then
+    vim.cmd('edit ' .. vim.fn.fnameescape(node.path))
+  elseif node.type == "project" or node.type == "folder" then
+    M._components.tree.toggle_node(node)
+    M.refresh_tree()
+  end
+end
+
+--- Handle renaming an item
+--- @param node table Tree node
+function M._handle_rename(node)
+  local new_name = vim.fn.input("New name: ", vim.fn.fnamemodify(node.path, ":t"))
+  if new_name ~= "" then
+    M._components.file_ops.rename(node.path, new_name)
+  end
+end
+
+--- Handle deleting an item
+--- @param node table Tree node
+function M._handle_delete(node)
+  M._components.file_ops.delete(node.path)
 end
 
 --- Create file interactively
-function M._create_file_interactive()
+function M.create_file_interactive()
   local current_node = M._get_current_node()
   if not current_node then
     return
   end
-  
-  -- Show file template selection
+
+  local templates = M._components.file_ops.get_file_templates()
   local template_names = {}
-  for _, template in ipairs(M.FILE_TEMPLATES) do
+  for _, template in ipairs(templates) do
     table.insert(template_names, template.name)
   end
-  
+
   vim.ui.select(template_names, {
     prompt = 'Select file template:',
   }, function(choice)
     if choice then
       local template = nil
-      for _, t in ipairs(M.FILE_TEMPLATES) do
+      for _, t in ipairs(templates) do
         if t.name == choice then
           template = t
           break
         end
       end
-      
+
       if template then
-        M._create_file_from_template(current_node, template)
+        local file_name = vim.fn.input("File name: ")
+        if file_name ~= "" then
+          local parent_path = M._get_parent_path(current_node)
+          M._components.file_ops.create_file(parent_path, template, file_name)
+        end
       end
     end
   end)
 end
 
+--- Create folder interactively
+function M.create_folder_interactive()
+  local current_node = M._get_current_node()
+  if not current_node then
+    return
+  end
+
+  local folder_name = vim.fn.input("Folder name: ")
+  if folder_name ~= "" then
+    local parent_path = M._get_parent_path(current_node)
+    M._components.file_ops.create_folder(parent_path, folder_name)
+  end
+end
+
 --- Create project interactively
-function M._create_project_interactive()
-  -- Show project template selection
+function M.create_project_interactive()
+  local templates = M._components.templates.get_templates()
   local template_names = {}
-  for _, template in ipairs(M.PROJECT_TEMPLATES) do
+  for _, template in ipairs(templates) do
     table.insert(template_names, template.name)
   end
-  
+
   vim.ui.select(template_names, {
     prompt = 'Select project template:',
   }, function(choice)
     if choice then
-      local template = nil
-      for _, t in ipairs(M.PROJECT_TEMPLATES) do
-        if t.name == choice then
-          template = t
-          break
-        end
-      end
-      
+      local template = M._components.templates.get_template_by_name(choice)
       if template then
-        M._create_project_from_template(template)
+        local project_name = vim.fn.input("Project name: ")
+        if project_name ~= "" then
+          local output_dir = M._get_solution_directory() or vim.fn.getcwd()
+          M._components.templates.create_project(template, project_name, output_dir)
+        end
       end
     end
   end)
 end
 
---- Create file from template
---- @param parent_node table Parent node
---- @param template table File template
-function M._create_file_from_template(parent_node, template)
-  local file_name = vim.fn.input("File name: ")
-  if file_name == "" then
-    return
-  end
-  
-  -- Add extension if not provided
-  if not file_name:match("%." .. template.extension .. "$") then
-    file_name = file_name .. "." .. template.extension
-  end
-  
-  local parent_path = parent_node.type == M.NODE_TYPES.FOLDER and parent_node.path or vim.fn.fnamemodify(parent_node.path, ':h')
-  local file_path = parent_path .. "/" .. file_name
-  
-  -- Generate file content from template
-  local content = M._generate_file_content(template, file_name)
-  
-  -- Create file
-  local success = M._write_file(file_path, content)
-  if success then
-    logger.info("Created file: " .. file_path)
-    M._refresh_tree()
-    
-    -- Open the new file
-    vim.schedule(function()
-      vim.cmd('edit ' .. vim.fn.fnameescape(file_path))
-    end)
+--- Get parent path for a node
+--- @param node table Tree node
+--- @return string parent_path
+function M._get_parent_path(node)
+  if node.type == "folder" then
+    return node.path
+  elseif node.type == "file" then
+    return vim.fn.fnamemodify(node.path, ":h")
+  elseif node.type == "project" then
+    return vim.fn.fnamemodify(node.path, ":h")
   else
-    logger.error("Failed to create file: " .. file_path)
+    return vim.fn.getcwd()
   end
-end
-
---- Create project from template
---- @param template table Project template
-function M._create_project_from_template(template)
-  local project_name = vim.fn.input("Project name: ")
-  if project_name == "" then
-    return
-  end
-  
-  local solution_dir = M._get_solution_directory()
-  if not solution_dir then
-    logger.error("No solution directory found")
-    return
-  end
-  
-  local project_dir = solution_dir .. "/" .. project_name
-  
-  -- Create project using dotnet CLI
-  local cmd = {
-    config.get_value("dotnet_path") or "dotnet",
-    "new", template.template,
-    "--name", project_name,
-    "--framework", template.framework,
-    "--output", project_dir
-  }
-  
-  process.run_async(cmd, {
-    on_exit = function(result)
-      if result.success then
-        logger.info("Created project: " .. project_name)
-        
-        -- Add project to solution if solution exists
-        local solution_file = M._find_solution_file()
-        if solution_file then
-          M._add_project_to_solution(solution_file, project_dir .. "/" .. project_name .. ".csproj")
-        end
-        
-        M._refresh_tree()
-      else
-        logger.error("Failed to create project: " .. project_name)
-        logger.debug("Error: " .. (result.stderr or "Unknown error"))
-      end
-    end
-  })
-end
-
---- Generate file content from template
---- @param template table File template
---- @param file_name string File name
---- @return string content
-function M._generate_file_content(template, file_name)
-  local class_name = vim.fn.fnamemodify(file_name, ':r')
-  local namespace = M._get_current_namespace()
-  
-  local templates = {
-    class = string.format([[namespace %s;
-
-public class %s
-{
-    
-}]], namespace, class_name),
-    
-    interface = string.format([[namespace %s;
-
-public interface %s
-{
-    
-}]], namespace, class_name),
-    
-    enum = string.format([[namespace %s;
-
-public enum %s
-{
-    
-}]], namespace, class_name),
-    
-    record = string.format([[namespace %s;
-
-public record %s
-{
-    
-}]], namespace, class_name),
-    
-    controller = string.format([[using Microsoft.AspNetCore.Mvc;
-
-namespace %s.Controllers;
-
-[ApiController]
-[Route("api/[controller]")]
-public class %s : ControllerBase
-{
-    
-}]], namespace, class_name),
-    
-    service = string.format([[namespace %s.Services;
-
-public class %s
-{
-    
-}]], namespace, class_name),
-    
-    model = string.format([[namespace %s.Models;
-
-public class %s
-{
-    
-}]], namespace, class_name),
-    
-    config = [[{
-  
-}]]
-  }
-  
-  return templates[template.template] or ""
-end
-
---- Get current namespace based on folder structure
---- @return string namespace
-function M._get_current_namespace()
-  local current_node = M._get_current_node()
-  if not current_node then
-    return "MyNamespace"
-  end
-  
-  -- Simple namespace generation based on folder structure
-  local project_node = M._find_parent_project(current_node)
-  if project_node then
-    local project_name = vim.fn.fnamemodify(project_node.path, ':t:r')
-    return project_name
-  end
-  
-  return "MyNamespace"
-end
-
---- Find parent project node
---- @param node table Current node
---- @return table|nil project_node
-function M._find_parent_project(node)
-  -- Implementation would traverse up the tree to find project node
-  return nil
 end
 
 --- Get solution directory
@@ -557,7 +449,7 @@ end
 --- @return string|nil solution_file
 function M._find_solution_file()
   local current_dir = vim.fn.getcwd()
-  
+
   while current_dir ~= '/' and current_dir ~= '' do
     local solution_files = vim.fn.glob(current_dir .. '/*.sln', false, true)
     if #solution_files > 0 then
@@ -565,166 +457,94 @@ function M._find_solution_file()
     end
     current_dir = vim.fn.fnamemodify(current_dir, ':h')
   end
-  
+
   return nil
 end
 
---- Add project to solution
---- @param solution_file string Solution file path
---- @param project_file string Project file path
-function M._add_project_to_solution(solution_file, project_file)
-  local cmd = {
-    config.get_value("dotnet_path") or "dotnet",
-    "sln", solution_file,
-    "add", project_file
+--- Create context menu callbacks
+--- @return table callbacks
+function M._create_context_menu_callbacks()
+  return {
+    create_file = function() M.create_file_interactive() end,
+    create_folder = function() M.create_folder_interactive() end,
+    create_project = function() M.create_project_interactive() end,
+    rename_item = function(node) M._handle_rename(node) end,
+    delete_item = function(node) M._handle_delete(node) end,
+    open_item = function(node) M._handle_open_item(node) end,
+    refresh_current = function() M.refresh_tree() end
   }
-  
-  process.run_async(cmd, {
-    on_exit = function(result)
-      if result.success then
-        logger.info("Added project to solution")
-      else
-        logger.error("Failed to add project to solution")
-      end
-    end
-  })
 end
 
---- Write file content
---- @param file_path string File path
---- @param content string File content
---- @return boolean success
-function M._write_file(file_path, content)
-  local file = io.open(file_path, 'w')
-  if not file then
-    return false
-  end
-  
-  file:write(content)
-  file:close()
-  return true
-end
-
---- Check if enhanced explorer is open
---- @return boolean is_open
-function M._is_open()
-  return M._explorer_win and vim.api.nvim_win_is_valid(M._explorer_win)
-end
-
---- Close enhanced explorer
-function M._close_enhanced()
-  if M._explorer_win and vim.api.nvim_win_is_valid(M._explorer_win) then
-    vim.api.nvim_win_close(M._explorer_win, false)
-    M._explorer_win = nil
-    logger.info("Enhanced solution explorer closed")
-  end
-end
-
---- Get current node under cursor
---- @return table|nil current_node
-function M._get_current_node()
-  if not M._explorer_win then
-    return nil
-  end
-  
-  local line = vim.api.nvim_win_get_cursor(M._explorer_win)[1]
-  -- Implementation would map line to tree node
-  return nil
-end
-
---- Show help
+--- Show help dialog
 function M._show_help()
-  local help_text = {
-    "Enhanced Solution Explorer Help",
-    "",
-    "Navigation:",
-    "  <CR>, o     - Open file/toggle folder",
-    "  <Tab>       - Toggle node expansion",
-    "",
-    "File Operations:",
-    "  a           - Create file",
-    "  A           - Create folder", 
-    "  p           - Create project",
-    "  r           - Rename",
-    "  d           - Delete",
-    "  c           - Copy",
-    "  m           - Move",
-    "",
-    "Project Operations:",
-    "  R           - Add reference",
-    "  P           - Manage packages",
-    "",
-    "Search & Filter:",
-    "  /           - Filter",
-    "  f           - Search files",
-    "  F           - Clear filter",
-    "",
-    "View Options:",
-    "  H           - Toggle hidden files",
-    "  I           - Show file info",
-    "",
-    "Other:",
-    "  <F5>        - Refresh all",
-    "  g           - Refresh current",
-    "  C           - Context menu",
-    "  ?           - Show this help",
-    "  q, <Esc>    - Close explorer"
-  }
-  
-  -- Show help in floating window
+  local help_lines = M._components.keymaps.get_help_text()
+
+  -- Create help buffer
   local help_buf = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_buf_set_lines(help_buf, 0, -1, false, help_text)
+  vim.api.nvim_buf_set_lines(help_buf, 0, -1, false, help_lines)
   vim.api.nvim_buf_set_option(help_buf, 'modifiable', false)
-  
+
+  -- Create help window
   local help_win = vim.api.nvim_open_win(help_buf, true, {
     relative = 'editor',
-    width = 50,
-    height = #help_text + 2,
-    col = math.floor((vim.o.columns - 50) / 2),
-    row = math.floor((vim.o.lines - #help_text) / 2),
+    width = 60,
+    height = math.min(#help_lines + 2, vim.o.lines - 4),
+    col = math.floor((vim.o.columns - 60) / 2),
+    row = math.floor((vim.o.lines - #help_lines) / 2),
     style = 'minimal',
     border = 'rounded',
     title = ' Help ',
     title_pos = 'center'
   })
-  
+
   -- Close help on any key
   vim.keymap.set('n', '<buffer>', function()
     vim.api.nvim_win_close(help_win, true)
   end, { buffer = help_buf })
 end
 
---- Placeholder functions for remaining operations
-function M._on_enter_enhanced() end
-function M._toggle_node_enhanced() end
-function M._create_folder_interactive() end
-function M._rename_interactive() end
-function M._delete_interactive() end
-function M._copy_interactive() end
-function M._move_interactive() end
-function M._add_reference_interactive() end
-function M._manage_packages_interactive() end
-function M._filter_interactive() end
-function M._search_interactive() end
-function M._clear_filter() end
-function M._toggle_hidden_files() end
-function M._show_file_info() end
-function M._show_context_menu() end
-function M._refresh_all() end
-function M._refresh_current() end
-function M._load_enhanced_solution(solution_file) end
-function M._refresh_project_node(project_file) end
-function M._handle_file_created(file_path) end
-function M._handle_file_deleted(file_path) end
-function M._handle_file_renamed(old_path, new_path) end
-function M._show_no_solution_message() end
-function M._refresh_tree() end
+--- Show no solution message
+function M._show_no_solution_message()
+  local buffer = M._components.window.get_buffer()
+  if buffer then
+    local lines = {
+      "No .NET solution found",
+      "",
+      "To get started:",
+      "• Open a directory containing a .sln file",
+      "• Create a new solution with :DotnetCreateProject",
+      "• Use 'p' to create a new project"
+    }
 
---- Shutdown enhanced explorer
+    vim.api.nvim_buf_set_option(buffer, 'modifiable', true)
+    vim.api.nvim_buf_set_lines(buffer, 0, -1, false, lines)
+    vim.api.nvim_buf_set_option(buffer, 'modifiable', false)
+  end
+end
+
+--- Refresh project node
+--- @param project_file string Project file path
+function M.refresh_project(project_file)
+  -- Reload the tree to pick up project changes
+  local solution_file = M._find_solution_file()
+  if solution_file then
+    M.load_solution(solution_file)
+  end
+end
+
+--- Shutdown enhanced explorer (following SOLID principles)
 function M.shutdown()
   if M._initialized then
-    M._close_enhanced()
+    -- Cleanup all components
+    for name, component in pairs(M._components) do
+      if component.cleanup then
+        component.cleanup()
+      end
+    end
+
+    M._components = {}
     M._initialized = false
+
     logger.info("Enhanced solution explorer shutdown")
   end
 end
