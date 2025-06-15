@@ -184,6 +184,101 @@ local DEFAULT_CONFIG = {
       show_error_notifications = true
     },
     description = "Build system configuration"
+  },
+
+  -- Debug integration configuration (Phase 2.1)
+  debug = {
+    type = "table",
+    default = {
+      enabled = true,
+      auto_install_adapters = true,
+      default_adapter = "coreclr", -- coreclr, netfx
+
+      -- Debug configurations
+      configurations = {
+        auto_generate = true,
+        include_args_prompt = true,
+        default_console = "integratedTerminal", -- integratedTerminal, externalTerminal
+        stop_at_entry = false
+      },
+
+      -- Breakpoint settings
+      breakpoints = {
+        auto_save = true,
+        persistent = true,
+        show_condition_prompt = true
+      }
+    },
+    description = "Debug integration configuration for .NET debugging with DAP support"
+  },
+
+  -- Test framework configuration (Phase 2.1)
+  test = {
+    type = "table",
+    default = {
+      enabled = true,
+      auto_discover = true,
+      discover_on_save = false,
+
+      -- Test execution
+      execution = {
+        parallel = true,
+        verbosity = "normal", -- quiet, minimal, normal, detailed, diagnostic
+        collect_coverage = false,
+        coverage_format = "cobertura", -- cobertura, opencover
+        timeout = 300 -- seconds
+      },
+
+      -- Test results
+      results = {
+        auto_open = true,
+        show_passed = true,
+        show_failed = true,
+        show_skipped = false,
+        group_by_project = true
+      },
+
+      -- Test discovery
+      discovery = {
+        frameworks = {"xunit", "nunit", "mstest"},
+        include_integration_tests = true,
+        exclude_patterns = {"**/bin/**", "**/obj/**"}
+      }
+    },
+    description = "Test framework configuration for .NET test discovery and execution"
+  },
+
+  -- Refactoring tools configuration (Phase 2.1)
+  refactor = {
+    type = "table",
+    default = {
+      enabled = true,
+      auto_organize_usings = false,
+      auto_remove_unused_usings = false,
+
+      -- Code generation
+      generation = {
+        auto_properties = true,
+        constructor_from_fields = true,
+        interface_implementation = true,
+        default_access_modifier = "public"
+      },
+
+      -- Rename settings
+      rename = {
+        preview_changes = true,
+        include_comments = false,
+        include_strings = false
+      },
+
+      -- Extract method settings
+      extract_method = {
+        default_access_modifier = "private",
+        analyze_return_type = true,
+        suggest_name = true
+      }
+    },
+    description = "Refactoring tools configuration for advanced code transformations"
   }
 }
 
