@@ -13,6 +13,11 @@ local lsp = require('dotnet-plugin.lsp')
 local ui = require('dotnet-plugin.ui')
 local build = require('dotnet-plugin.build')
 
+-- Import Phase 2.1 components
+local debug = require('dotnet-plugin.debug')
+local test = require('dotnet-plugin.test')
+local refactor = require('dotnet-plugin.refactor')
+
 -- Plugin state
 M._initialized = false
 
@@ -108,8 +113,44 @@ function M.setup(opts)
     logger.debug("Build system disabled in configuration")
   end
 
+  -- Initialize debug integration (Phase 2.1)
+  if config.get_value("debug.enabled") then
+    local debug_success = debug.setup()
+    if debug_success then
+      logger.info("Debug integration initialized")
+    else
+      logger.warn("Debug integration initialization failed, continuing without debugging")
+    end
+  else
+    logger.debug("Debug integration disabled in configuration")
+  end
+
+  -- Initialize test framework (Phase 2.1)
+  if config.get_value("test.enabled") then
+    local test_success = test.setup()
+    if test_success then
+      logger.info("Test framework initialized")
+    else
+      logger.warn("Test framework initialization failed, continuing without testing")
+    end
+  else
+    logger.debug("Test framework disabled in configuration")
+  end
+
+  -- Initialize refactoring tools (Phase 2.1)
+  if config.get_value("refactor.enabled") then
+    local refactor_success = refactor.setup()
+    if refactor_success then
+      logger.info("Refactoring tools initialized")
+    else
+      logger.warn("Refactoring tools initialization failed, continuing without refactoring")
+    end
+  else
+    logger.debug("Refactoring tools disabled in configuration")
+  end
+
   -- Log successful initialization
-  logger.info("dotnet-plugin.nvim initialized successfully")
+  logger.info("dotnet-plugin.nvim Phase 2.1 initialized successfully")
 
   M._initialized = true
 end
@@ -257,11 +298,18 @@ end
 --- Shutdown the plugin
 function M.shutdown()
   if M._initialized then
+    -- Shutdown Phase 2.1 components
+    refactor.shutdown()
+    test.shutdown()
+    debug.shutdown()
+
+    -- Shutdown Phase 1 components
     build.shutdown()
     ui.shutdown()
     lsp.shutdown()
     watchers.shutdown()
     cache.shutdown()
+
     logger.info("dotnet-plugin.nvim shutdown")
     M._initialized = false
   end
