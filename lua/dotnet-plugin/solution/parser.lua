@@ -7,6 +7,16 @@ local logger = require('dotnet-plugin.core.logger')
 local cache = require('dotnet-plugin.cache')
 local config = require('dotnet-plugin.core.config')
 
+-- Compatibility function for vim.trim (available in Neovim 0.8+)
+local function trim(str)
+  if vim.trim then
+    return vim.trim(str)
+  else
+    -- Fallback for older Neovim versions
+    return str:match("^%s*(.-)%s*$")
+  end
+end
+
 --- Solution information
 --- @class Solution
 --- @field path string Solution file path
@@ -79,7 +89,7 @@ function M.parse_solution(solution_path, use_cache)
   
   local i = 1
   while i <= #lines do
-    local line = vim.trim(lines[i])
+    local line = trim(lines[i])
     
     -- Parse format version
     if line:match("^Microsoft Visual Studio Solution File") then
@@ -110,7 +120,7 @@ function M.parse_solution(solution_path, use_cache)
         -- Parse project dependencies
         i = i + 1
         while i <= #lines do
-          local dep_line = vim.trim(lines[i])
+          local dep_line = trim(lines[i])
           if dep_line == "EndProject" then
             break
           end
@@ -119,7 +129,7 @@ function M.parse_solution(solution_path, use_cache)
           if dep_line:match("ProjectSection%(ProjectDependencies%)") then
             i = i + 1
             while i <= #lines do
-              local proj_dep_line = vim.trim(lines[i])
+              local proj_dep_line = trim(lines[i])
               if proj_dep_line == "EndProjectSection" then
                 break
               end
